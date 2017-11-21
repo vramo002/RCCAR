@@ -1,3 +1,4 @@
+//this is the first phase of the rc car
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdio.h>
