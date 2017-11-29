@@ -240,7 +240,7 @@ int main(void)
 	DDRA = 0x01;		/* Make trigger pin as output */
 	PORTB = 0xFF;
 	sei();			/* Enable global interrupt */
-	TIMSK3 = (1 << TOIE1);	/* Enable Timer1 overflow interrupts */
+	TIMSK3 = (1 << TOIE3);	/* Enable Timer1 overflow interrupts */
 	TCCR3A = 0;		/* Set all bit to zero Normal operation */
 	
 	while (1)
