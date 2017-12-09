@@ -6,20 +6,7 @@
 #include "scheduler.h"
 #include "timer.h"
 #include "usart_ATmega1284.h"
-
-#include <util/delay.h>
-#include <string.h>
-#include <stdlib.h>
-
-
-#define  Trigger_pin	PA0
-
-int TimerOverflow = 0;
-
-ISR(TIMER3_OVF_vect)
-{
-	TimerOverflow++;	/* Increment Timer Overflow count */
-}
+#include "ultrasonicsesnor.h"
 
 unsigned char variable = 0;
 unsigned char modeselect = 0;
@@ -147,39 +134,56 @@ int usingtick(int state){
 	switch(state){
 		case wait1:
 			PORTC = 0x00;
-			//PORTA = 0x01;
 			break;
 		case F:
-			//PORTA = 0x00;
 			PORTC = 0x0A;
 			break;
 		case B:
-			//PORTA = 0x00;
 			PORTC = 0x05;
 			break;
 		case L:
-			//PORTA = 0x00;
 			PORTC = 0x08;
 			break;
 		case R:
-			//PORTA = 0x00;
 			PORTC = 0x02;
 			break;
 		case G:
-			//PORTA = 0x00;
 			PORTC = 0x08;
 			break;
 		case I:
-			//PORTA = 0x00;
 			PORTC = 0x02;
 			break;
 		case H:
-			//PORTA = 0x00;
 			PORTC = 0x04;
 			break;
 		case J:
-			//PORTA = 0x00;
 			PORTC = 0x01;
+			break;
+		default:
+			break;
+	}
+	return state;
+}
+
+enum distancedata {wait2, gettingdistance};
+	
+int distancetick(int state){
+	switch(state){
+		case wait2:
+			state = gettingdistance;
+			break;
+		case gettingdistance:
+			state = wait2;
+			break;
+		default:
+			state = wait2;
+			break;
+	}
+	switch(state){
+		case wait2:
+			break;
+		case gettingdistance:
+			distance = sensor();
 			break;
 		default:
 			break;
@@ -189,28 +193,30 @@ int usingtick(int state){
 
 int main(void)
 {
-	//DDRA = 0xFF;  PORTA = 0x00; //OUTPUTS
+	DDRA = 0xFF;  PORTA = 0x00; //OUTPUTS
 	DDRC = 0xFF;  PORTC = 0x00;
-	//DDRB = 0x00;  PORTB = 0xFF; //INPUTS
+	DDRB = 0x00;  PORTB = 0xFF; //INPUTS
 	
 	//Period for the tasks
 	unsigned long int SMtest1_calc = 25;
 	unsigned long int SMtest2_calc = 50;
+	unsigned long int SMtest3_calc = 10;
 	
 	//Calculating GCD
 	unsigned long int tmpGCD = 1;
 	tmpGCD = findGCD(SMtest1_calc, SMtest2_calc);
-	
+	tmpGCD = findGCD(tmpGCD, SMtest3_calc);
 	///Greatest common divisor for all tasks or smallest time unit for tasks.
 	unsigned long int GCD = tmpGCD;
 
 	//Recalculate GCD periods for scheduler
 	unsigned long int SMtest1_period = SMtest1_calc/GCD;
 	unsigned long int SMtest2_period = SMtest2_calc/GCD;
+	unsigned long int SMtest3_period = SMtest3_calc/GCD;
 	
 	//Declare an array of tasks
-	static task task1, task2;
-	task *tasks[] = { &task1, &task2};
+	static task task1, task2, task3;
+	task *tasks[] = { &task1, &task2, &task3};
 	
 	const unsigned short numTasks = sizeof(tasks)/sizeof(task*);
 	
@@ -226,6 +232,12 @@ int main(void)
 	task2.elapsedTime = SMtest2_period;//Task current elapsed time.
 	task2.TickFct = &usingtick;//Function pointer for the tick.
 	
+	// Task 2
+	task3.state = -1;//Task initial state.
+	task3.period = SMtest3_period;//Task Period.
+	task3.elapsedTime = SMtest3_period;//Task current elapsed time.
+	task3.TickFct = &distancetick;//Function pointer for the tick.
+	
 	// Set the timer and turn it on
 	TimerSet(GCD);
 	TimerOn();
@@ -235,37 +247,10 @@ int main(void)
 	
 	
 	initUSART(0);
-	
-	long count;
-	DDRA = 0x01;		/* Make trigger pin as output */
-	PORTB = 0xFF;
-	sei();			/* Enable global interrupt */
-	TIMSK3 = (1 << TOIE3);	/* Enable Timer1 overflow interrupts */
-	TCCR3A = 0;		/* Set all bit to zero Normal operation */
+	init(); //start ultrasonicsesor
 	
 	while (1)
 	{
-		PORTA |= (1 << Trigger_pin);
-		_delay_us(10);
-		PORTA &= (~(1 << Trigger_pin));
-		
-		TCNT3 = 0;	/* Clear Timer counter */
-		TCCR3B = 0x41;	/* Capture on rising edge, No prescaler*/
-		TIFR3 = 1<<ICF3;	/* Clear ICP flag (Input Capture flag) */
-		TIFR3 = 1<<TOV3;	/* Clear Timer Overflow flag */
-		
-		while ((TIFR3 & (1 << ICF3)) == 0);/* Wait for rising edge */
-		TCNT3 = 0;	/* Clear Timer counter */
-		TCCR3B = 0x01;	/* Capture on falling edge, No prescaler */
-		TIFR3 = 1<<ICF3;	/* Clear ICP flag (Input Capture flag) */
-		TIFR3 = 1<<TOV3;	/* Clear Timer Overflow flag */
-		TimerOverflow = 0;/* Clear Timer overflow count */
-		
-		while ((TIFR3 & (1 << ICF3)) == 0);/* Wait for falling edge */
-		count = ICR3 + (65535 * TimerOverflow);	/* Take count */
-		/* 8MHz Timer freq, sound speed =343 m/s */
-		distance = (double)count / 466.47;
-		
 		for ( i = 0; i < numTasks; i++ ) {
 			// Task is ready to tick
 			if ( tasks[i]->elapsedTime == tasks[i]->period ) {
